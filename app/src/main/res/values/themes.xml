@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Vision" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/vision_void</item>
+        <item name="android:colorBackground">@color/vision_void</item>
+        <item name="android:navigationBarColor">@color/vision_void</item>
+        <item name="android:statusBarColor">@color/vision_void</item>
+    </style>
+</resources>
