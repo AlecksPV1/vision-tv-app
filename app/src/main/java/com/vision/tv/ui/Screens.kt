@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -63,7 +64,10 @@ fun AppRoot(vm: AppViewModel) {
             is Screen.ProfileEditor -> ProfileEditorScreen(vm, s.profile)
             Screen.Sources -> SourcesScreen(vm)
             is Screen.SourceEditor -> SourceEditorScreen(vm, s.source)
-            Screen.Channels -> ChannelsScreen(vm)
+            Screen.Home -> HomeScreen(vm)
+            Screen.MyList -> MyListScreen(vm)
+            is Screen.Catalog -> CatalogScreen(vm, s.kind)
+            is Screen.Detail -> DetailScreen(vm, s.media)
             is Screen.Player -> PlayerScreen(vm, s.index)
         }
     }
@@ -229,7 +233,7 @@ private fun ProfileCard(p: Profile, editing: Boolean, onClick: () -> Unit) {
         contentAlignment = Alignment.Center,
     ) { focused ->
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Avatar(p.avatar, p.name.take(1).uppercase(), 128.px)
+            Avatar(p.avatar, avatarGlyph(p.emoji, p.name), 128.px)
             Spacer(Modifier.height(20.px))
             Text(
                 p.name,
@@ -269,7 +273,7 @@ private fun PinDialog(profile: Profile, onDismiss: () -> Unit, onOk: () -> Unit)
             rim = 0.20f,
         ) {
             Column(Modifier.padding(40.px), horizontalAlignment = Alignment.CenterHorizontally) {
-                Avatar(profile.avatar, profile.name.take(1).uppercase(), 72.px)
+                Avatar(profile.avatar, avatarGlyph(profile.emoji, profile.name), 72.px)
                 Spacer(Modifier.height(16.px))
                 Text("PIN de ${profile.name}", style = t.headlineMd, color = Color.White)
                 Spacer(Modifier.height(24.px))
@@ -292,10 +296,24 @@ private fun PinDialog(profile: Profile, onDismiss: () -> Unit, onOk: () -> Unit)
     }
 }
 
+/**
+ * Emojis disponibles como icono de perfil. Se eligieron de versiones antiguas de Unicode (hasta 7.0)
+ * para que también se vean en Fire Sticks viejos (Fire OS 5), que no conocen los emojis recientes.
+ */
+private val ProfileEmojis = listOf(
+    "😀", "😎", "😍", "😇", "😜", "😺",
+    "🐶", "🐱", "🐭", "🐹", "🐰", "🐻", "🐼", "🐨", "🐯", "🐮", "🐷", "🐸", "🐵", "🐔", "🐧", "🐦", "🐙", "🐳", "🐬", "🐢", "🐝",
+    "👻", "👽", "👾",
+    "🎬", "🎮", "🎧", "🎸", "⚽", "🏀", "🎯",
+    "🚀", "🌟", "🔥", "⚡", "🌈", "🌙", "☀️", "💎", "👑",
+    "🍕", "🍔", "🍩", "🌸", "🌴",
+)
+
 @Composable
 fun ProfileEditorScreen(vm: AppViewModel, existing: Profile?) {
     val t = V.type
     var name by remember { mutableStateOf(existing?.name ?: "") }
+    var emoji by remember { mutableStateOf(existing?.emoji ?: "") }
     var avatar by remember { mutableIntStateOf(existing?.avatar ?: 0) }
     var pin by remember { mutableStateOf("") }
     var removePin by remember { mutableStateOf(false) }
@@ -307,7 +325,7 @@ fun ProfileEditorScreen(vm: AppViewModel, existing: Profile?) {
         GlassSurface(Modifier.width(960.px), radius = 24.px, fill = 0.06f, rim = 0.16f) {
             Column(Modifier.verticalScroll(rememberScrollState()).padding(48.px)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Avatar(avatar, name.trim().take(1).uppercase().ifEmpty { "?" }, 72.px)
+                    Avatar(avatar, avatarGlyph(emoji, name), 72.px)
                     Spacer(Modifier.width(24.px))
                     Text(
                         if (existing == null) "Nuevo perfil" else "Editar perfil",
@@ -315,8 +333,38 @@ fun ProfileEditorScreen(vm: AppViewModel, existing: Profile?) {
                     )
                 }
                 Spacer(Modifier.height(32.px))
-                GlassField(name, { name = it.take(20) }, "Nombre", Modifier.fillMaxWidth())
+                GlassField(
+                    name, { name = it.take(20) }, "Nombre", Modifier.fillMaxWidth(),
+                    capitalization = KeyboardCapitalization.Words,
+                )
                 Spacer(Modifier.height(24.px))
+                Text("Icono", style = t.labelMd, color = Dim)
+                Spacer(Modifier.height(8.px))
+                // El primer botón es la inicial del nombre; el resto son emojis.
+                Column(
+                    Modifier.padding(horizontal = 8.px, vertical = 8.px),
+                    verticalArrangement = Arrangement.spacedBy(12.px),
+                ) {
+                    (listOf("") + ProfileEmojis).chunked(10).forEach { chunk ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.px)) {
+                            chunk.forEach { e ->
+                                val selected = emoji == e
+                                Focusable(
+                                    onClick = { emoji = e },
+                                    modifier = Modifier.size(72.px),
+                                    radius = Pill,
+                                    fill = if (selected) 0.16f else 0.05f,
+                                    rim = if (selected) 0.90f else 0.12f,
+                                    rimColor = if (selected) Cyan else Color.White,
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Avatar(avatar, avatarGlyph(e, name), 56.px)
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(16.px))
                 Text("Color", style = t.labelMd, color = Dim)
                 Spacer(Modifier.height(8.px))
                 LazyRow(
@@ -368,6 +416,7 @@ fun ProfileEditorScreen(vm: AppViewModel, existing: Profile?) {
                                         avatar = avatar,
                                         pinHash = hash,
                                         createdAt = existing?.createdAt ?: System.currentTimeMillis(),
+                                        emoji = emoji,
                                     )
                                 )
                                 vm.pop()

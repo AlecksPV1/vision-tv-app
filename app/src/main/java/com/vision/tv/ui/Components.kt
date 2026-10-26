@@ -50,8 +50,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp as lerpColor
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -163,9 +165,15 @@ fun avatarBrush(index: Int): Brush {
     return Brush.linearGradient(listOf(a.copy(alpha = 0.92f), b.copy(alpha = 0.92f)))
 }
 
+/** Lo que se dibuja dentro del avatar: el emoji elegido o, si no hay, la inicial del nombre. */
+fun avatarGlyph(emoji: String, name: String): String =
+    emoji.ifBlank { name.trim().take(1).uppercase().ifEmpty { "?" } }
+
 @Composable
 fun Avatar(index: Int, letter: String, diameter: Dp, modifier: Modifier = Modifier) {
     val fontSize: TextUnit = with(LocalDensity.current) { (diameter.toPx() * 0.42f).toSp() }
+    val emojiSize: TextUnit = with(LocalDensity.current) { (diameter.toPx() * 0.52f).toSp() }
+    val isEmoji = letter.isNotEmpty() && !letter.first().isLetterOrDigit() && letter != "?"
     Box(
         modifier
             .size(diameter)
@@ -182,15 +190,31 @@ fun Avatar(index: Int, letter: String, diameter: Dp, modifier: Modifier = Modifi
             },
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            letter,
-            style = V.type.headlineLg.copy(
-                fontSize = fontSize,
-                fontWeight = FontWeight.ExtraBold,
-                lineHeight = TextUnit.Unspecified,
-            ),
-            color = Color.White,
-        )
+        if (isEmoji) {
+            // Inter no trae emojis: se usa la fuente del sistema (Noto Color Emoji).
+            Text(
+                letter,
+                style = V.type.headlineLg.copy(
+                    fontFamily = FontFamily.Default,
+                    fontSize = emojiSize,
+                    fontWeight = FontWeight.Normal,
+                    lineHeight = TextUnit.Unspecified,
+                    letterSpacing = TextUnit.Unspecified,
+                    fontFeatureSettings = null,
+                ),
+                color = Color.White,
+            )
+        } else {
+            Text(
+                letter,
+                style = V.type.headlineLg.copy(
+                    fontSize = fontSize,
+                    fontWeight = FontWeight.ExtraBold,
+                    lineHeight = TextUnit.Unspecified,
+                ),
+                color = Color.White,
+            )
+        }
     }
 }
 
@@ -244,6 +268,7 @@ fun GlassField(
     imeAction: ImeAction = ImeAction.Next,
     compact: Boolean = false,
     focusRequester: FocusRequester? = null,
+    capitalization: KeyboardCapitalization = KeyboardCapitalization.None,
 ) {
     val t = V.type
     var focused by remember { mutableStateOf(false) }
@@ -277,6 +302,7 @@ fun GlassField(
                 cursorBrush = SolidColor(Cyan),
                 visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
                 keyboardOptions = KeyboardOptions(
+                    capitalization = capitalization,
                     keyboardType = if (password && keyboard == KeyboardType.Text) KeyboardType.Password else keyboard,
                     imeAction = imeAction,
                 ),

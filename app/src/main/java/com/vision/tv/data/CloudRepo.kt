@@ -12,8 +12,10 @@ import kotlinx.coroutines.flow.callbackFlow
  * y sincroniza solo, así que las escrituras no se esperan: se ven al instante.
  *
  *   users/{uid}/profiles/{id}                       nombre, avatar, PIN (hash)
- *   users/{uid}/profiles/{id}/favorites/{channel}   favoritos del perfil
- *   users/{uid}/profiles/{id}/recents/{channel}     vistos recientemente
+ *   users/{uid}/profiles/{id}/favorites/{key}       favoritos (canales, películas y series)
+ *   users/{uid}/profiles/{id}/watchlist/{key}       "Mi lista" (ver después)
+ *   users/{uid}/profiles/{id}/recents/{key}         últimos canales en vivo
+ *   users/{uid}/profiles/{id}/progress/{key}        dónde se quedó en películas y episodios
  *   users/{uid}/sources/{id}                        listas Xtream / M3U de la cuenta
  */
 class CloudRepo(uid: String) {
@@ -36,6 +38,7 @@ class CloudRepo(uid: String) {
                 avatar = (d.getLong("avatar") ?: 0L).toInt(),
                 pinHash = d.getString("pinHash") ?: "",
                 createdAt = d.getLong("createdAt") ?: 0L,
+                emoji = d.getString("emoji") ?: "",
             )
         }
 
@@ -46,13 +49,14 @@ class CloudRepo(uid: String) {
                 "avatar" to p.avatar,
                 "pinHash" to p.pinHash,
                 "createdAt" to p.createdAt,
+                "emoji" to p.emoji,
             )
         )
     }
 
     fun deleteProfile(id: String) {
-        // Firestore no borra subcolecciones solo: limpiamos favoritos y recientes.
-        for (sub in listOf("favorites", "recents")) {
+        // Firestore no borra subcolecciones solo: limpiamos lo que cuelga del perfil.
+        for (sub in listOf("favorites", "watchlist", "recents", "progress")) {
             profileDoc(id).collection(sub).get().addOnSuccessListener { snap ->
                 snap.documents.forEach { it.reference.delete() }
             }
@@ -91,43 +95,109 @@ class CloudRepo(uid: String) {
         root.collection("sources").document(id).delete()
     }
 
-    // ---- Favoritos y recientes (por perfil) ----
-    private fun toChannel(d: DocumentSnapshot) = Channel(
+    // ---- Conversión Media <-> documento ----
+    private fun toMedia(d: DocumentSnapshot) = Media(
         key = d.id,
         name = d.getString("name") ?: "",
         logo = d.getString("logo"),
         group = d.getString("group") ?: "",
         streamUrl = d.getString("streamUrl") ?: "",
+        // los favoritos antiguos no traen "kind": eran canales en vivo
+        kind = runCatching { MediaKind.valueOf(d.getString("kind") ?: "LIVE") }.getOrDefault(MediaKind.LIVE),
+        itemId = d.getString("itemId") ?: "",
+        ext = d.getString("ext") ?: "",
+        seriesId = d.getString("seriesId") ?: "",
+        seriesName = d.getString("seriesName") ?: "",
+        season = (d.getLong("season") ?: 0L).toInt(),
+        episode = (d.getLong("episode") ?: 0L).toInt(),
+        year = d.getString("year") ?: "",
+        rating = d.getString("rating") ?: "",
+        durationSec = (d.getLong("durationSec") ?: 0L).toInt(),
     )
 
-    private fun channelMap(c: Channel, timeField: String) = mapOf(
+    private fun mediaMap(c: Media, extra: Map<String, Any?>): Map<String, Any?> = mapOf(
         "name" to c.name,
         "logo" to c.logo,
         "group" to c.group,
         "streamUrl" to c.streamUrl,
-        timeField to System.currentTimeMillis(),
-    )
+        "kind" to c.kind.name,
+        "itemId" to c.itemId,
+        "ext" to c.ext,
+        "seriesId" to c.seriesId,
+        "seriesName" to c.seriesName,
+        "season" to c.season,
+        "episode" to c.episode,
+        "year" to c.year,
+        "rating" to c.rating,
+        "durationSec" to c.durationSec,
+    ) + extra
 
-    fun favorites(profileId: String): Flow<List<Channel>> =
+    // ---- Favoritos (por perfil) ----
+    fun favorites(profileId: String): Flow<List<Media>> =
         profileDoc(profileId).collection("favorites")
             .orderBy("addedAt", Query.Direction.DESCENDING)
-            .watch(::toChannel)
+            .watch(::toMedia)
 
-    fun addFavorite(profileId: String, c: Channel) {
-        profileDoc(profileId).collection("favorites").document(c.key).set(channelMap(c, "addedAt"))
+    fun addFavorite(profileId: String, c: Media) {
+        profileDoc(profileId).collection("favorites").document(c.key)
+            .set(mediaMap(c, mapOf("addedAt" to System.currentTimeMillis())))
     }
 
     fun removeFavorite(profileId: String, key: String) {
         profileDoc(profileId).collection("favorites").document(key).delete()
     }
 
-    fun recents(profileId: String): Flow<List<Channel>> =
+    // ---- Mi lista / ver después (por perfil) ----
+    fun watchlist(profileId: String): Flow<List<Media>> =
+        profileDoc(profileId).collection("watchlist")
+            .orderBy("addedAt", Query.Direction.DESCENDING)
+            .watch(::toMedia)
+
+    fun addWatchlist(profileId: String, c: Media) {
+        profileDoc(profileId).collection("watchlist").document(c.key)
+            .set(mediaMap(c, mapOf("addedAt" to System.currentTimeMillis())))
+    }
+
+    fun removeWatchlist(profileId: String, key: String) {
+        profileDoc(profileId).collection("watchlist").document(key).delete()
+    }
+
+    // ---- Últimos canales en vivo (por perfil) ----
+    fun recents(profileId: String): Flow<List<Media>> =
         profileDoc(profileId).collection("recents")
             .orderBy("watchedAt", Query.Direction.DESCENDING)
             .limit(25)
-            .watch(::toChannel)
+            .watch(::toMedia)
 
-    fun addRecent(profileId: String, c: Channel) {
-        profileDoc(profileId).collection("recents").document(c.key).set(channelMap(c, "watchedAt"))
+    fun addRecent(profileId: String, c: Media) {
+        profileDoc(profileId).collection("recents").document(c.key)
+            .set(mediaMap(c, mapOf("watchedAt" to System.currentTimeMillis())))
+    }
+
+    // ---- Progreso en películas y episodios (por perfil) ----
+    fun progress(profileId: String): Flow<List<Progress>> =
+        profileDoc(profileId).collection("progress")
+            .orderBy("updatedAt", Query.Direction.DESCENDING)
+            .limit(150)
+            .watch { d ->
+                Progress(
+                    media = toMedia(d),
+                    positionMs = d.getLong("positionMs") ?: 0L,
+                    durationMs = d.getLong("durationMs") ?: 0L,
+                    updatedAt = d.getLong("updatedAt") ?: 0L,
+                )
+            }
+
+    fun saveProgress(profileId: String, p: Progress) {
+        profileDoc(profileId).collection("progress").document(p.media.key).set(
+            mediaMap(
+                p.media,
+                mapOf(
+                    "positionMs" to p.positionMs,
+                    "durationMs" to p.durationMs,
+                    "updatedAt" to p.updatedAt,
+                ),
+            )
+        )
     }
 }

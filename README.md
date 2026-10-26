@@ -1,12 +1,15 @@
 # Vision (Android TV / Fire TV)
 
-Reproductor IPTV para Fire Stick y Android TV con **perfiles**, **favoritos** y **recientes** que se
-sincronizan entre todos tus dispositivos usando Firebase (cuenta con correo y contraseña).
+Reproductor IPTV para Fire Stick y Android TV con **perfiles**, **favoritos**, **Mi lista** y
+**continuar viendo** que se sincronizan entre todos tus dispositivos usando Firebase (cuenta con
+correo y contraseña).
 
 - Fuentes: **Xtream Codes** (URL + usuario + contraseña) y listas **M3U/M3U8**.
-- Reproductor: Media3/ExoPlayer (HLS y TS).
+- Contenido: **TV en vivo**, **Películas** y **Series** (películas y series solo con Xtream).
+- Reproductor: Media3/ExoPlayer (HLS, TS, MP4 y MKV).
 - Interfaz: Jetpack Compose con estilo **Liquid Glass Cinematic**, pensada para control remoto (D-pad).
 - Sincronización: Firebase Auth + Firestore (con copia local, funciona con mala conexión).
+- Red: si el DNS de tu router no resuelve el servidor, Vision consulta 1.1.1.1 y 8.8.8.8 por su cuenta.
 
 > Este proyecto es solo el reproductor. No incluye canales ni listas: cada persona agrega las de su
 > propio proveedor.
@@ -24,7 +27,8 @@ sincronizan entre todos tus dispositivos usando Firebase (cuenta con correo y co
 4. **Authentication → Método de acceso →** activa **Correo electrónico/contraseña**.
 5. **Firestore Database → Crear base de datos** (modo producción).
 6. En Firestore → pestaña **Reglas**, pega el contenido de `firestore.rules` y publica.
-   Esas reglas hacen que cada cuenta solo lea y escriba sus propios datos.
+   Esas reglas hacen que cada cuenta solo lea y escriba sus propios datos. Ya cubren las
+   colecciones nuevas (progreso y Mi lista), así que no hay que cambiarlas.
 
 Sin `google-services.json` la app compila pero se cierra al abrir.
 
@@ -52,74 +56,128 @@ Sin `google-services.json` la app compila pero se cierra al abrir.
 ## 5. Cómo se usa
 
 1. Inicia sesión o crea tu cuenta (la misma en todos los dispositivos).
-2. Crea perfiles (tú, tu pareja…) con nombre, color y PIN opcional.
+2. Crea perfiles (tú, tu pareja…) con nombre, **emoji o inicial como icono**, color y PIN opcional.
 3. Añade tu fuente IPTV (**Fuentes IPTV**): Xtream (URL, usuario, contraseña) o enlace M3U.
-   Con Xtream se valida al guardar.
-4. Elige tu perfil → canales por categoría, búsqueda y reproducción.
+   Con Xtream se valida al guardar. Escribe la URL como `http://servidor.com:puerto`.
+4. Elige tu perfil. Llegas al **Inicio**, con menú superior y filas al estilo Netflix.
 
-Controles: **OK** reproduce · **mantener OK** en un canal lo agrega a favoritos ·
-dentro del video **Arriba/Abajo** cambia de canal, **Menú** marca favorito, **Atrás** vuelve.
+### Menú y Inicio (estilo Netflix)
 
-## 6. Diseño
+- Barra superior: **Inicio · TV en vivo · Películas · Series · Mi lista** (Películas y Series solo con
+  Xtream), más tu fuente y tu perfil a la derecha. Con flecha arriba desde cualquier fila llegas a ella.
+- **Inicio**: banner con lo último que veías (o una película destacada) y filas: Continuar viendo,
+  Mi lista, Tus favoritos, Canales recientes, Películas y Series populares.
 
-Sistema **Liquid Glass Cinematic** (colores, tipografía y componentes de tus parámetros):
+### Catálogos
+
+- Una fila por categoría; "Ver todo" abre la categoría en cuadrícula. Atrás vuelve a las filas.
+- Filas personales arriba: Continuar viendo, Mi lista, Favoritos y, en TV en vivo, Vistos recientemente.
+- Búsqueda arriba: muestra los resultados en cuadrícula.
+- **Mantén OK** sobre un título para marcarlo como favorito.
+
+### Cambio de perfil
+
+Al cambiar de perfil se borra de pantalla todo lo del anterior antes de mostrar el nuevo
+(favoritos, avance, búsquedas), así nunca se ve por un instante lo que veía otra persona.
+
+### Ficha de película o serie
+
+- Sinopsis, año, nota, duración y género.
+- **Reanudar · 32:10** (o **Desde el inicio**) en películas; **Continuar T1 · E3** o **Siguiente:
+  T1 · E4** en series.
+- **Mi lista** (ver después) y **Favorito**.
+- Series: temporadas y episodios, con **VISTO**, barra de avance y tiempo restante en cada uno.
+
+### Reproductor
+
+| Contenido | Control |
+|---|---|
+| TV en vivo | **Arriba/Abajo** cambia de canal · **Menú** favorito |
+| Película / episodio | **Izq/Der** ±10 s · **Avance/Retroceso rápido** ±30 s · **OK** pausa |
+| Episodios | **Siguiente/Anterior** cambia de episodio; al terminar pasa solo al siguiente |
+| Todos | **Atrás** vuelve |
+
+El avance se guarda cada 10 segundos, al pausar y al salir. Una película o episodio pasa a
+**visto** al llegar al 95 %.
+
+## 6. Qué se guarda por perfil
+
+Cada perfil tiene lo suyo, sincronizado entre dispositivos (`users/{uid}/profiles/{id}/…`):
+
+| Colección | Contenido |
+|---|---|
+| `favorites` | Canales, películas y series favoritos |
+| `watchlist` | Mi lista (ver después) |
+| `recents` | Últimos canales en vivo |
+| `progress` | Dónde te quedaste en películas y episodios |
+
+Si tienes varias fuentes, favoritos, lista y avance se muestran solo para la fuente activa.
+
+## 7. Diseño
+
+Sistema **Liquid Glass Cinematic**:
 
 - **Paleta:** lienzo `#060810`, acentos cian `#00F0FF`, azul `#007AFF` y amatista `#8A2BE2`.
 - **Tipografía:** Inter (Regular, SemiBold, Bold y ExtraBold) incluida en `app/src/main/assets/fonts`,
   con cifras tabulares.
-- **Escala 1080p:** todas las medidas (márgenes de 64 px, radios, tamaños de texto) están definidas
-  en píxeles de una pantalla de 1920 px y se adaptan solas a cada densidad (`Int.px` en `Theme.kt`).
+- **Escala 1080p:** todas las medidas están definidas en píxeles de una pantalla de 1920 px y se
+  adaptan solas a cada densidad (`Int.px` en `Theme.kt`).
 - **Vidrio:** `GlassSurface` (`Glass.kt`) con relleno translúcido, luz cenital, borde especular y
   línea de brillo interior.
 - **Motor de foco:** `Focusable` escala 1.05x en 240 ms con la curva `cubic-bezier(0.2, 0.9, 0.4, 1.1)`,
   intensifica el vidrio y proyecta el halo cian/azul.
-- **Componentes:** tarjetas de perfil, cápsula de navegación, insignias EN VIVO / conexiones /
-  vencimiento, y HUD flotante del reproductor que se oculta a los 4 segundos.
 
 **Limitación honesta:** Android no ofrece desenfoque real del fondo (*backdrop blur*) en Fire OS 5/7
 y en Fire Sticks antiguos sería muy pesado. El vidrio se simula con capas translúcidas sobre un
-fondo con luces ambientales; se ve esmerilado, pero no desenfoca el video. Tampoco se implementó la
-inclinación 3D (*tilt*) con el trackpad, que solo existe en el mando de Apple TV.
+fondo con luces ambientales. Tampoco se implementó la inclinación 3D (*tilt*) con el trackpad, que
+solo existe en el mando de Apple TV.
 
 ### Icono
 
 Fire TV muestra un **banner rectangular** (16:9) en lugar de un icono cuadrado:
 
-- `drawable-*/banner.png` (320×180 dp; se incluyen mdpi, hdpi, xhdpi y xxhdpi) con el lente de vidrio
-  y el nombre Vision. El de xhdpi (640×360) es el que usa la mayoría de Fire Stick.
-- `drawable-*/ic_launcher.png`: versión cuadrada de respaldo (ajustes, otros Android).
+- `drawable-*/banner.png` (320×180 dp; mdpi, hdpi, xhdpi y xxhdpi).
+- `drawable-*/ic_launcher.png`: versión cuadrada de respaldo.
 
-## 7. Sobre los perfiles y las sesiones simultáneas
+## 8. Sobre los perfiles y las sesiones simultáneas
 
-- Los perfiles, favoritos y recientes son de la app y se sincronizan por Firebase.
+- Los perfiles, favoritos, listas y avance son de la app y se sincronizan por Firebase.
 - El límite de **conexiones simultáneas** lo define tu proveedor IPTV, no la app. Con Xtream la app
   muestra *conexiones en uso / máximas* y avisa cuando se alcanza el límite. Todos los perfiles
   comparten ese cupo.
 
-## 8. Lo que falta / siguientes pasos
+## 9. Lo que falta / siguientes pasos
 
 - **Login por código/QR** (hoy se escribe correo y contraseña con el control remoto). Requiere un
   paso de vinculación desde el celular (por ejemplo con Cloud Functions).
-- **Guía de programación (EPG)**, películas y series (Xtream los ofrece; aquí solo hay TV en vivo).
+- **Guía de programación (EPG)** de los canales en vivo.
+- **Subtítulos y selección de audio** en películas y series.
 - **Contraseñas de IPTV**: se guardan en tu documento privado de Firestore, protegido por las reglas
   y cifrado en reposo por Google, pero **no** cifradas por la app. Si piensas compartir la app con
   más gente, conviene cifrarlas del lado del cliente.
 - **Aviso de privacidad** si otras personas van a crear cuenta con sus datos.
-- Fire Sticks muy viejos (Fire OS 5) pueden ir lentos con listas muy grandes.
+- Catálogos muy grandes (decenas de miles de películas) pueden tardar en la primera carga y ser
+  lentos en Fire Sticks antiguos.
 
-## 9. Estructura
+## 10. Estructura
 
 ```
 app/src/main/java/com/vision/tv/
-  MainActivity.kt         punto de entrada
-  AppViewModel.kt         navegación, cuenta, perfiles, fuentes, favoritos
-  data/Models.kt          Profile, Source, Channel…
-  data/Net.kt             cliente Xtream y parser M3U
-  data/CloudRepo.kt       lectura/escritura en Firestore
-  ui/Theme.kt             paleta, escala 1080p, tipografía Inter
-  ui/Glass.kt             GlassSurface (vidrio) y Focusable (motor de foco)
-  ui/Components.kt        fondo, marca, botones, campos, insignias, avatares
-  ui/Screens.kt           acceso, perfiles, fuentes
-  ui/ChannelsScreen.kt    categorías y canales
-  ui/PlayerScreen.kt      reproductor ExoPlayer con HUD flotante
+  MainActivity.kt          punto de entrada
+  AppViewModel.kt          navegación, cuenta, perfiles, catálogos, progreso, favoritos y lista
+  data/Models.kt           Profile, Source, Media, Progress…
+  data/Net.kt              cliente Xtream (vivo, películas, series), parser M3U y DNS de respaldo
+  data/CloudRepo.kt        lectura/escritura en Firestore
+  ui/Theme.kt              paleta, escala 1080p, tipografía Inter
+  ui/Glass.kt              GlassSurface (vidrio) y Focusable (motor de foco)
+  ui/Components.kt         fondo, marca, botones, campos, insignias, avatares
+  ui/MediaComponents.kt    pósters, tarjetas de continuar, barra de avance
+  ui/Screens.kt            acceso, perfiles, fuentes
+  ui/NavAndShelves.kt      barra superior, filas y tarjetas
+  ui/HomeScreen.kt         inicio: banner y filas
+  ui/CatalogScreen.kt      catálogos por filas y cuadrícula
+  ui/MyListScreen.kt       Mi lista y favoritos
+  ui/DetailScreen.kt       ficha con temporadas y episodios
+  ui/PlayerScreen.kt       reproductor con reanudación y guardado de avance
+  ui/Format.kt             formato de tiempos
 ```
