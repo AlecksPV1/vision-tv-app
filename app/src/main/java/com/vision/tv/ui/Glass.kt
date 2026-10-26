@@ -4,7 +4,6 @@ import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
@@ -19,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -26,6 +26,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.coerceAtLeast
@@ -60,26 +61,45 @@ fun GlassSurface(
     bloom: Boolean = true,
     contentAlignment: Alignment = Alignment.TopStart,
     content: @Composable BoxScope.() -> Unit = {},
+) = GlassBox(modifier, radius, fill, rim, rimColor, brush, { focus }, bloom, contentAlignment, content)
+
+/**
+ * Igual que [GlassSurface], pero el nivel de foco se lee al dibujar: la animación del foco solo
+ * vuelve a pintar el vidrio y no recompone lo que hay dentro (imágenes, textos). En un Fire Stick
+ * es la diferencia entre un menú fluido y uno que se traba.
+ */
+@Composable
+private fun GlassBox(
+    modifier: Modifier,
+    radius: Dp,
+    fill: Float,
+    rim: Float,
+    rimColor: Color,
+    brush: Brush?,
+    focus: () -> Float,
+    bloom: Boolean,
+    contentAlignment: Alignment,
+    content: @Composable BoxScope.() -> Unit,
 ) {
     val k = LocalScale.current
     val shape = RoundedCornerShape(radius)
-    val f = focus.coerceIn(0f, 1f)
     val rimWidth = 1.px.coerceAtLeast(1.dp)
-    val rimBrush = Brush.verticalGradient(
-        listOf(
-            rimColor.copy(alpha = lerp(rim, 0.75f, f)),
-            rimColor.copy(alpha = lerp(rim * 0.35f, 0.40f, f)),
-        )
-    )
 
     Box(
         modifier
             .then(
-                if (bloom && f > 0.01f) Modifier.drawBehind { drawBloom(radius.toPx(), f, k) }
-                else Modifier
+                if (bloom) {
+                    Modifier.drawBehind {
+                        val f = focus().coerceIn(0f, 1f)
+                        if (f > 0.01f) drawBloom(radius.toPx(), f, k)
+                    }
+                } else {
+                    Modifier
+                }
             )
             .clip(shape)
-            .drawBehind {
+            .drawWithContent {
+                val f = focus().coerceIn(0f, 1f)
                 if (brush != null) drawRect(brush) else drawRect(Color.White.copy(alpha = lerp(fill, 0.18f, f)))
                 // luz cenital que cae desde el borde superior
                 drawRect(
@@ -97,8 +117,24 @@ fun GlassSurface(
                     end = Offset(size.width - r, 1f),
                     strokeWidth = maxOf(1f, 1.5f * k),
                 )
-            }
-            .border(rimWidth, rimBrush, shape),
+
+                drawContent()
+
+                // borde especular degradado
+                val w = rimWidth.toPx()
+                drawRoundRect(
+                    brush = Brush.verticalGradient(
+                        listOf(
+                            rimColor.copy(alpha = lerp(rim, 0.75f, f)),
+                            rimColor.copy(alpha = lerp(rim * 0.35f, 0.40f, f)),
+                        )
+                    ),
+                    topLeft = Offset(w / 2f, w / 2f),
+                    size = Size(size.width - w, size.height - w),
+                    cornerRadius = CornerRadius((r - w / 2f).coerceAtLeast(0f)),
+                    style = Stroke(width = w),
+                )
+            },
         contentAlignment = contentAlignment,
         content = content,
     )
@@ -151,18 +187,19 @@ fun Focusable(
     content: @Composable BoxScope.(Boolean) -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val amt by animateFloatAsState(
+    // Se pasa el State (no su valor) para leerlo solo al dibujar: ver GlassBox.
+    val amt = animateFloatAsState(
         targetValue = if (focused) 1f else 0f,
         animationSpec = tween(durationMillis = 240, easing = FocusEasing),
         label = "focus",
     )
     val source = remember { MutableInteractionSource() }
 
-    GlassSurface(
+    GlassBox(
         modifier = modifier
-            .zIndex(amt)
+            .zIndex(if (focused) 1f else 0f)
             .graphicsLayer {
-                val s = 1f + scale * amt
+                val s = 1f + scale * amt.value
                 scaleX = s
                 scaleY = s
             }
@@ -178,7 +215,8 @@ fun Focusable(
         rim = rim,
         rimColor = rimColor,
         brush = brush,
-        focus = amt,
+        focus = { amt.value },
+        bloom = true,
         contentAlignment = contentAlignment,
     ) {
         content(focused)

@@ -69,7 +69,27 @@ data class CatalogState(
     val loading: Boolean = false,
     val error: String? = null,
     val items: List<Media> = emptyList(),
+    /** Categorías en orden alfabético con sus títulos (se calculan en segundo plano). */
+    val groups: List<Pair<String, List<Media>>> = emptyList(),
+    val byGroup: Map<String, List<Media>> = emptyMap(),
+    /** Los mejor calificados, para las filas "populares" del Inicio. */
+    val top: List<Media> = emptyList(),
 )
+
+/** Arma un catálogo listo para mostrar. Con decenas de miles de títulos tarda: llamar fuera del hilo principal. */
+fun buildCatalog(items: List<Media>, topCount: Int = 30): CatalogState {
+    val byGroup = LinkedHashMap<String, MutableList<Media>>()
+    for (m in items) byGroup.getOrPut(m.group.ifBlank { "Otros" }) { ArrayList() } += m
+    val groups = byGroup.entries.map { it.key to (it.value as List<Media>) }.sortedBy { it.first.lowercase() }
+    // La nota se convierte una sola vez por título (no en cada comparación del ordenamiento).
+    val top = items.asSequence()
+        .map { it to (it.rating.toDoubleOrNull() ?: 0.0) }
+        .sortedByDescending { it.second }
+        .take(topCount)
+        .map { it.first }
+        .toList()
+    return CatalogState(items = items, groups = groups, byGroup = byGroup, top = top)
+}
 
 /** Ficha de una película o serie (sinopsis, temporadas y episodios). */
 data class DetailState(

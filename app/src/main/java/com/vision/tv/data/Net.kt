@@ -132,11 +132,16 @@ fun normalizeBase(raw: String): String {
 // Un catálogo de películas puede pesar decenas de MB. Se lee elemento por elemento para no
 // cargar todo el texto en memoria (los Fire Stick tienen poca).
 
-private fun JsonReader.readFlat(): Map<String, String> {
-    val m = HashMap<String, String>(16)
+/** Lee un objeto plano guardando solo los campos de [keep] (los demás se saltan sin crear textos). */
+private fun JsonReader.readFlat(keep: Set<String>): Map<String, String> {
+    val m = HashMap<String, String>(keep.size * 2)
     beginObject()
     while (hasNext()) {
         val name = nextName()
+        if (name !in keep) {
+            skipValue()
+            continue
+        }
         when (peek()) {
             JsonToken.STRING, JsonToken.NUMBER -> m[name] = nextString()
             JsonToken.BOOLEAN -> m[name] = nextBoolean().toString()
@@ -148,7 +153,7 @@ private fun JsonReader.readFlat(): Map<String, String> {
     return m
 }
 
-private fun <T> streamArray(url: String, each: (Map<String, String>) -> T?): List<T> = Http.guarded(url) {
+private fun <T> streamArray(url: String, keep: Set<String>, each: (Map<String, String>) -> T?): List<T> = Http.guarded(url) {
     val req = Request.Builder().url(url).header("User-Agent", UA).build()
     Net.client.newCall(req).execute().use { r ->
         if (!r.isSuccessful) throw IOException("El servidor respondió HTTP ${r.code}")
@@ -158,7 +163,7 @@ private fun <T> streamArray(url: String, each: (Map<String, String>) -> T?): Lis
             if (jr.peek() == JsonToken.BEGIN_ARRAY) {
                 jr.beginArray()
                 while (jr.hasNext()) {
-                    if (jr.peek() == JsonToken.BEGIN_OBJECT) each(jr.readFlat())?.let { out += it } else jr.skipValue()
+                    if (jr.peek() == JsonToken.BEGIN_OBJECT) each(jr.readFlat(keep))?.let { out += it } else jr.skipValue()
                 }
                 jr.endArray()
             }
@@ -171,6 +176,22 @@ private fun <T> streamArray(url: String, each: (Map<String, String>) -> T?): Lis
 private fun JSONObject.str(name: String): String {
     val v = opt(name)
     return if (v == null || v == JSONObject.NULL) "" else v.toString()
+}
+
+private val CAT_KEYS = setOf("category_id", "category_name")
+private val LIVE_KEYS = setOf("stream_id", "name", "stream_icon", "category_id")
+private val VOD_KEYS = setOf("stream_id", "name", "stream_icon", "category_id", "container_extension", "rating")
+private val SERIES_KEYS =
+    setOf("series_id", "name", "cover", "category_id", "releaseDate", "release_date", "year", "rating")
+
+/** Reutiliza el mismo texto para las extensiones comunes en vez de guardar una copia por película. */
+private fun commonExt(raw: String?): String = when (val e = raw.orEmpty().trim().lowercase()) {
+    "", "mp4" -> "mp4"
+    "mkv" -> "mkv"
+    "avi" -> "avi"
+    "ts" -> "ts"
+    "m3u8" -> "m3u8"
+    else -> e
 }
 
 class XtreamClient(rawUrl: String, private val user: String, private val pass: String) {
@@ -195,7 +216,7 @@ class XtreamClient(rawUrl: String, private val user: String, private val pass: S
     }
 
     private fun categories(action: String): Map<String, String> =
-        streamArray<Pair<String, String>>(api(action)) { m ->
+        streamArray<Pair<String, String>>(api(action), CAT_KEYS) { m ->
             val id = m["category_id"]
             if (id == null) null else id to (m["category_name"] ?: "")
         }.toMap()
@@ -203,7 +224,7 @@ class XtreamClient(rawUrl: String, private val user: String, private val pass: S
     // ── TV en vivo ──
     suspend fun liveChannels(sourceId: String): List<Media> = withContext(Dispatchers.IO) {
         val cats = categories("get_live_categories")
-        val out = streamArray<Media>(api("get_live_streams")) { m ->
+        val out = streamArray<Media>(api("get_live_streams"), LIVE_KEYS) { m ->
             val id = m["stream_id"]
             if (id == null) null else Media(
                 key = "${sourceId}_$id",
@@ -221,10 +242,10 @@ class XtreamClient(rawUrl: String, private val user: String, private val pass: S
     // ── Películas ──
     suspend fun movies(sourceId: String): List<Media> = withContext(Dispatchers.IO) {
         val cats = categories("get_vod_categories")
-        val out = streamArray<Media>(api("get_vod_streams")) { m ->
+        val out = streamArray<Media>(api("get_vod_streams"), VOD_KEYS) { m ->
             val id = m["stream_id"]
             if (id == null) null else {
-                val ext = (m["container_extension"] ?: "").ifBlank { "mp4" }
+                val ext = commonExt(m["container_extension"])
                 Media(
                     key = "${sourceId}_m$id",
                     name = m["name"] ?: "",
@@ -245,7 +266,7 @@ class XtreamClient(rawUrl: String, private val user: String, private val pass: S
     // ── Series ──
     suspend fun seriesList(sourceId: String): List<Media> = withContext(Dispatchers.IO) {
         val cats = categories("get_series_categories")
-        val out = streamArray<Media>(api("get_series")) { m ->
+        val out = streamArray<Media>(api("get_series"), SERIES_KEYS) { m ->
             val id = m["series_id"]
             if (id == null) null else Media(
                 key = "${sourceId}_s$id",
@@ -326,7 +347,11 @@ class XtreamClient(rawUrl: String, private val user: String, private val pass: S
         }
         if (bySeason.isEmpty()) error("Esta serie no tiene episodios disponibles")
 
-        val sorted = bySeason.mapValues { (_, list) -> list.sortedBy { it.episode } }
+        // Algunos proveedores repiten episodios; la lista de la ficha no admite repetidos.
+        val seen = HashSet<String>()
+        val sorted = bySeason
+            .mapValues { (_, list) -> list.filter { seen.add(it.key) }.sortedBy { it.episode } }
+            .filterValues { it.isNotEmpty() }
         DetailState(
             plot = info.str("plot"),
             genre = info.str("genre"),

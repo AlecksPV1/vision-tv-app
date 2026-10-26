@@ -56,8 +56,8 @@ fun HomeScreen(vm: AppViewModel) {
     LaunchedEffect(source?.id) { vm.preloadShelves() }
 
     val favTitles = remember(favs) { favs.filter { it.kind != MediaKind.LIVE } }
-    val topMovies = remember(movies.items) { movies.items.top() }
-    val topSeries = remember(series.items) { series.items.top() }
+    val topMovies = movies.top
+    val topSeries = series.top
     val resume = remember(cont) { cont.filter { !it.finished } }
     val featured: Progress? = resume.firstOrNull()
     val fallback: Media? = if (featured == null) topMovies.firstOrNull() else null
@@ -159,10 +159,6 @@ fun HomeScreen(vm: AppViewModel) {
         HintBar()
     }
 }
-
-/** Las mejor calificadas (o las primeras si el proveedor no trae notas). */
-private fun List<Media>.top(): List<Media> =
-    sortedByDescending { it.rating.toDoubleOrNull() ?: 0.0 }.take(SHELF_MAX)
 
 @Composable
 private fun HeroBanner(

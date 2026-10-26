@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vision.tv.AppViewModel
+import com.vision.tv.BuildConfig
 import com.vision.tv.Screen
 import com.vision.tv.data.Profile
 import com.vision.tv.data.Source
@@ -71,6 +72,8 @@ fun AppRoot(vm: AppViewModel) {
             is Screen.Player -> PlayerScreen(vm, s.index)
         }
     }
+    // Avisos (actualización, cierre inesperado): nunca encima de un video.
+    if (stack.last() !is Screen.Player) AppDialogs(vm)
 }
 
 // ───────────────────────── Acceso ─────────────────────────
@@ -208,7 +211,13 @@ fun ProfilesScreen(vm: AppViewModel) {
             TvButton(if (editing) "Listo" else "Administrar perfiles", selected = editing) { editing = !editing }
             TvButton("Fuentes IPTV") { vm.push(Screen.Sources) }
             TvButton("Cerrar sesión") { vm.signOut() }
+            TvButton("Buscar actualizaciones") { vm.checkUpdate(manual = true) }
         }
+        Text(
+            "Versión ${BuildConfig.VERSION_NAME}",
+            Modifier.align(Alignment.TopEnd),
+            style = t.labelMd, color = Faint,
+        )
     }
 
     pinFor?.let { p ->

@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,10 +40,11 @@ import com.vision.tv.CAT_WATCHLIST
 import com.vision.tv.Screen
 import com.vision.tv.data.Media
 import com.vision.tv.data.MediaKind
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 private const val ROW_MAX = 30
-
-private fun Media.cat(): String = group.ifBlank { "Otros" }
 
 /**
  * Una sección (TV en vivo, Películas o Series) estilo Netflix: una fila por categoría.
@@ -85,25 +87,31 @@ fun CatalogScreen(vm: AppViewModel, kind: MediaKind) {
             }
         }
     }
-    val groups = remember(st.items) {
-        st.items.groupBy { it.cat() }.toList().sortedBy { it.first.lowercase() }
-    }
+    val groups = st.groups
 
     val searching = query.isNotBlank()
     val openCat = category.ifEmpty { null }
     val gridCat = if (searching) CAT_ALL else openCat
-    val gridList: List<Media>? = remember(st.items, favItems, recents, watchItems, gridCat, query) {
+    val baseList: List<Media>? = remember(st, favItems, recents, watchItems, gridCat) {
         gridCat?.let { c ->
-            val base = when (c) {
+            when (c) {
                 CAT_FAVS -> favItems
                 CAT_RECENTS -> recents
                 CAT_WATCHLIST -> watchItems
                 CAT_ALL -> st.items
-                else -> st.items.filter { it.cat() == c }
+                else -> st.byGroup[c].orEmpty()
             }
-            if (query.isBlank()) base else base.filter { it.name.contains(query, ignoreCase = true) }
         }
     }
+    // Buscar recorre miles de títulos: se hace en segundo plano y espera a que termines de escribir,
+    // para que el teclado y los menús no se traben. null = todavía buscando.
+    val found by produceState<List<Media>?>(null, baseList, query) {
+        val base = baseList
+        if (query.isBlank() || base == null) return@produceState
+        delay(250)
+        value = withContext(Dispatchers.Default) { base.filter { it.name.contains(query, ignoreCase = true) } }
+    }
+    val gridList: List<Media>? = if (searching) found.orEmpty() else baseList
 
     // Atrás sale de la cuadrícula o de la búsqueda antes de salir de la sección.
     BackHandler(enabled = searching || openCat != null) {
@@ -178,7 +186,7 @@ fun CatalogScreen(vm: AppViewModel, kind: MediaKind) {
                                 CAT_FAVS -> "Aún no tienes favoritos.\nMantén presionado OK sobre un título para añadirlo."
                                 CAT_WATCHLIST -> "Tu lista está vacía.\nAgrega títulos desde su ficha con «Mi lista»."
                                 CAT_RECENTS -> "Todavía no has visto canales."
-                                else -> "Sin resultados"
+                                else -> if (searching && found == null) "Buscando…" else "Sin resultados"
                             },
                             Modifier.align(Alignment.Center),
                             style = t.bodyLg, color = Dim, textAlign = TextAlign.Center,

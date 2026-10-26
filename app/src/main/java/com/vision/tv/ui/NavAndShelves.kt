@@ -177,7 +177,8 @@ fun rememberShelf(vm: AppViewModel): Shelf {
     val progress by vm.progressMap.collectAsStateWithLifecycle()
     val favKeys = remember(favs) { favs.map { it.key }.toHashSet() }
     val watchKeys = remember(watch) { watch.map { it.key }.toHashSet() }
-    return Shelf(vm, favKeys, watchKeys, progress)
+    // Misma instancia mientras no cambie nada: así las filas no se recomponen enteras sin motivo.
+    return remember(vm, favKeys, watchKeys, progress) { Shelf(vm, favKeys, watchKeys, progress) }
 }
 
 private fun Modifier.firstFocus(i: Int, first: FocusRequester?): Modifier =

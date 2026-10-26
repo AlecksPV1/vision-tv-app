@@ -53,6 +53,22 @@ Sin `google-services.json` la app compila pero se cierra al abrir.
 3. Abre Downloader, escribe la URL del APK y pulsa Ir → Instalar.
    (Si quieres un código corto en lugar de la URL, puedes solicitarlo en AFTVnews.)
 
+### Actualizaciones desde la app (a partir de la 1.2.0)
+
+Al abrir, Vision consulta la última release de este repositorio en GitHub. Si hay una versión más
+nueva, muestra un aviso con las novedades y el botón **Actualizar ahora**: descarga el APK y abre el
+instalador. También hay un botón **Buscar actualizaciones** en la pantalla de perfiles.
+
+- La primera vez, Fire OS pide autorizar a Vision para instalar apps (la app lleva a ese ajuste).
+- Para publicar una versión nueva: sube `versionCode` y `versionName` en `app/build.gradle.kts`,
+  compila con la **misma llave** (`vision.jks`) y crea una release en GitHub con etiqueta `vX.Y.Z`
+  y el `.apk` adjunto. Si la llave cambia, Android no deja instalar encima.
+
+### Si la app se cierra
+
+Vision guarda el detalle del error y lo muestra la siguiente vez que se abre
+(«Vision se cerró inesperadamente»). Una foto de esa pantalla basta para saber qué falló.
+
 ## 5. Cómo se usa
 
 1. Inicia sesión o crea tu cuenta (la misma en todos los dispositivos).
@@ -156,18 +172,20 @@ Fire TV muestra un **banner rectangular** (16:9) en lugar de un icono cuadrado:
   y cifrado en reposo por Google, pero **no** cifradas por la app. Si piensas compartir la app con
   más gente, conviene cifrarlas del lado del cliente.
 - **Aviso de privacidad** si otras personas van a crear cuenta con sus datos.
-- Catálogos muy grandes (decenas de miles de películas) pueden tardar en la primera carga y ser
-  lentos en Fire Sticks antiguos.
+- Catálogos muy grandes (decenas de miles de películas) pueden tardar en la primera carga en
+  Fire Sticks antiguos.
 
 ## 10. Estructura
 
 ```
 app/src/main/java/com/vision/tv/
+  VisionApp.kt             arranque: registro de errores y cargador de imágenes
   MainActivity.kt          punto de entrada
   AppViewModel.kt          navegación, cuenta, perfiles, catálogos, progreso, favoritos y lista
   data/Models.kt           Profile, Source, Media, Progress…
   data/Net.kt              cliente Xtream (vivo, películas, series), parser M3U y DNS de respaldo
   data/CloudRepo.kt        lectura/escritura en Firestore
+  data/Updater.kt          busca, descarga e instala versiones nuevas desde GitHub
   ui/Theme.kt              paleta, escala 1080p, tipografía Inter
   ui/Glass.kt              GlassSurface (vidrio) y Focusable (motor de foco)
   ui/Components.kt         fondo, marca, botones, campos, insignias, avatares
@@ -179,5 +197,6 @@ app/src/main/java/com/vision/tv/
   ui/MyListScreen.kt       Mi lista y favoritos
   ui/DetailScreen.kt       ficha con temporadas y episodios
   ui/PlayerScreen.kt       reproductor con reanudación y guardado de avance
+  ui/AppDialogs.kt         avisos de actualización y de cierre inesperado
   ui/Format.kt             formato de tiempos
 ```

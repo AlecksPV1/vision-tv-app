@@ -1,5 +1,6 @@
 package com.vision.tv
 
+import android.content.Context
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.lifecycle.ViewModel
@@ -18,13 +19,18 @@ import com.vision.tv.data.Media
 import com.vision.tv.data.MediaKind
 import com.vision.tv.data.Profile
 import com.vision.tv.data.Progress
+import com.vision.tv.data.Release
 import com.vision.tv.data.Source
 import com.vision.tv.data.SourceType
+import com.vision.tv.data.Updater
 import com.vision.tv.data.XtreamClient
+import com.vision.tv.data.buildCatalog
 import com.vision.tv.data.loadM3u
 import com.vision.tv.data.normalizeBase
+import java.io.File
 import java.security.MessageDigest
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
@@ -42,6 +48,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 
 const val CAT_FAVS = "Favoritos"
 const val CAT_RECENTS = "Recientes"
@@ -60,6 +67,21 @@ sealed interface Screen {
     data class Catalog(val kind: MediaKind) : Screen
     data class Detail(val media: Media) : Screen
     data class Player(val index: Int) : Screen
+}
+
+/** Estado del aviso de actualización. */
+sealed interface UpdateUi {
+    data object Hidden : UpdateUi
+    data object Checking : UpdateUi
+    data object UpToDate : UpdateUi
+    data class Available(val rel: Release) : UpdateUi
+    /** progress 0..1, o -1 si el servidor no dice el tamaño. */
+    data class Downloading(val rel: Release, val progress: Float) : UpdateUi
+    /** Descargado: falta el permiso de Fire OS para instalar apps desde Vision. */
+    data class NeedsPermission(val rel: Release, val apk: File) : UpdateUi
+    /** Descargado y enviado al instalador (por si la persona lo cancela y quiere reintentar). */
+    data class Ready(val rel: Release, val apk: File) : UpdateUi
+    data class Failed(val rel: Release?, val message: String) : UpdateUi
 }
 
 fun sha256(s: String): String =
@@ -191,6 +213,76 @@ class AppViewModel : ViewModel() {
             }
         }.take(12)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    // ---- Errores y actualizaciones ----
+    /** Detalle del último cierre inesperado (se muestra una vez al abrir la app). */
+    val lastCrash = MutableStateFlow(CrashLog.read())
+
+    fun dismissCrash() {
+        CrashLog.clear()
+        lastCrash.value = null
+    }
+
+    val update = MutableStateFlow<UpdateUi>(UpdateUi.Hidden)
+    private var updateJob: Job? = null
+
+    init {
+        checkUpdate(manual = false)
+    }
+
+    /** Al abrir la app se revisa en silencio; desde el botón se avisa también si ya estás al día. */
+    fun checkUpdate(manual: Boolean) {
+        if (updateJob?.isActive == true) return
+        if (manual) update.value = UpdateUi.Checking
+        updateJob = viewModelScope.launch {
+            try {
+                val rel = Updater.check()
+                update.value = when {
+                    rel != null -> UpdateUi.Available(rel)
+                    manual -> UpdateUi.UpToDate
+                    else -> UpdateUi.Hidden
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                if (manual) update.value = UpdateUi.Failed(null, "No se pudo consultar GitHub: ${e.message ?: "sin conexión"}")
+            }
+        }
+    }
+
+    fun downloadUpdate(ctx: Context, rel: Release) {
+        val app = ctx.applicationContext
+        updateJob?.cancel()
+        update.value = UpdateUi.Downloading(rel, 0f)
+        updateJob = viewModelScope.launch {
+            try {
+                val apk = Updater.download(app, rel) { p -> update.value = UpdateUi.Downloading(rel, p) }
+                installUpdate(app, rel, apk)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                update.value = UpdateUi.Failed(rel, e.message ?: "La descarga falló")
+            }
+        }
+    }
+
+    fun installUpdate(ctx: Context, rel: Release, apk: File) {
+        if (!Updater.canInstall(ctx)) {
+            update.value = UpdateUi.NeedsPermission(rel, apk)
+            return
+        }
+        try {
+            Updater.install(ctx, apk)
+            update.value = UpdateUi.Ready(rel, apk)
+        } catch (e: Exception) {
+            update.value = UpdateUi.Failed(rel, "No se pudo abrir el instalador: ${e.message}")
+        }
+    }
+
+    fun dismissUpdate() {
+        updateJob?.cancel()
+        update.value = UpdateUi.Hidden
+    }
 
     // ---- Cuenta ----
     fun signIn(email: String, pass: String, create: Boolean, onError: (String) -> Unit) {
@@ -353,7 +445,7 @@ class AppViewModel : ViewModel() {
                 } else {
                     emptyList()
                 }
-                b.catalog.value = CatalogState(items = items)
+                b.catalog.value = withContext(Dispatchers.Default) { buildCatalog(items) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
