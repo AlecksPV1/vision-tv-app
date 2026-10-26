@@ -185,8 +185,29 @@ class CloudRepo(uid: String) {
                     positionMs = d.getLong("positionMs") ?: 0L,
                     durationMs = d.getLong("durationMs") ?: 0L,
                     updatedAt = d.getLong("updatedAt") ?: 0L,
+                    hidden = d.getBoolean("hidden") ?: false,
                 )
             }
+
+    /**
+     * Quita de "Continuar viendo" una película o, si es un episodio, la serie completa.
+     * Solo marca los documentos: el avance y los "VISTO" se conservan, y como [saveProgress]
+     * reescribe el documento sin la marca, al volver a verlo reaparece solo.
+     */
+    fun hideProgress(profileId: String, m: Media) {
+        val col = profileDoc(profileId).collection("progress")
+        if (m.kind != MediaKind.EPISODE) {
+            col.document(m.key).update("hidden", true)
+            return
+        }
+        // Los ids de episodio son "{fuente}_e{id}": el prefijo evita tocar otra fuente con el mismo seriesId.
+        val prefix = m.key.substringBefore("_e") + "_e"
+        col.whereEqualTo("seriesId", m.seriesId).get().addOnSuccessListener { snap ->
+            val batch = FirebaseFirestore.getInstance().batch()
+            snap.documents.filter { it.id.startsWith(prefix) }.forEach { batch.update(it.reference, "hidden", true) }
+            batch.commit()
+        }
+    }
 
     fun saveProgress(profileId: String, p: Progress) {
         profileDoc(profileId).collection("progress").document(p.media.key).set(

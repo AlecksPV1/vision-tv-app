@@ -223,13 +223,14 @@ fun PosterCard(
 
 /** Tarjeta del tablero "Continuar viendo": póster, título, episodio y cuánto falta. */
 @Composable
-fun ContinueCard(p: Progress, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun ContinueCard(p: Progress, onClick: () -> Unit, onLongClick: () -> Unit, modifier: Modifier = Modifier) {
     val t = V.type
     val m = p.media
     val isEpisode = m.kind == MediaKind.EPISODE
 
     Focusable(
         onClick = onClick,
+        onLongClick = onLongClick,
         modifier = modifier.width(560.px).height(216.px),
         radius = 20.px,
         contentAlignment = Alignment.CenterStart,

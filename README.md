@@ -90,6 +90,8 @@ Vision guarda el detalle del error y lo muestra la siguiente vez que se abre
 - Filas personales arriba: Continuar viendo, Mi lista, Favoritos y, en TV en vivo, Vistos recientemente.
 - Búsqueda arriba: muestra los resultados en cuadrícula.
 - **Mantén OK** sobre un título para marcarlo como favorito.
+- **Mantén OK** sobre una tarjeta de Continuar viendo para quitarla de esa fila (también desde la ficha,
+  con «Quitar de Continuar viendo»). El avance se conserva y reaparece si la vuelves a reproducir.
 
 ### Cambio de perfil
 

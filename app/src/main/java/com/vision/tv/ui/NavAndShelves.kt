@@ -133,7 +133,7 @@ fun HintBar() {
         horizontalArrangement = Arrangement.spacedBy(32.px),
     ) {
         HintChip("OK", "Abrir")
-        HintChip("MANTÉN OK", "Favorito")
+        HintChip("MANTÉN OK", "Favorito · Quitar de Continuar viendo")
         HintChip("ATRÁS", "Volver")
     }
 }
@@ -227,7 +227,9 @@ fun LazyListScope.channelItems(
 }
 
 fun LazyListScope.continueItems(list: List<Progress>, s: Shelf, first: FocusRequester? = null) {
-    itemsIndexed(list) { i, p -> ContinueCard(p, { s.open(p) }, Modifier.firstFocus(i, first)) }
+    itemsIndexed(list) { i, p ->
+        ContinueCard(p, { s.open(p) }, { s.vm.askHide(p) }, Modifier.firstFocus(i, first))
+    }
 }
 
 @Composable

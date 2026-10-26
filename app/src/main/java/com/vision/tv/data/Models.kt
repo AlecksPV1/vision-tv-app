@@ -53,6 +53,8 @@ data class Progress(
     val positionMs: Long,
     val durationMs: Long,
     val updatedAt: Long,
+    /** Quitado de "Continuar viendo" (el avance se conserva; al volver a reproducirlo reaparece). */
+    val hidden: Boolean = false,
 ) {
     val finished: Boolean get() = durationMs > 0 && positionMs >= durationMs * 95 / 100
     val fraction: Float get() = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f

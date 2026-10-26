@@ -207,8 +207,9 @@ class AppViewModel : ViewModel() {
         val seenSeries = HashSet<String>()
         list.filter { p ->
             when (p.media.kind) {
-                MediaKind.MOVIE -> !p.finished
-                MediaKind.EPISODE -> seenSeries.add(p.media.seriesId)
+                MediaKind.MOVIE -> !p.finished && !p.hidden
+                // Decide el episodio más reciente de cada serie: si se quitó, la serie no aparece.
+                MediaKind.EPISODE -> seenSeries.add(p.media.seriesId) && !p.hidden
                 else -> false
             }
         }.take(12)
@@ -584,6 +585,23 @@ class AppViewModel : ViewModel() {
         if (m.kind != MediaKind.MOVIE && m.kind != MediaKind.EPISODE) return
         val p = activeProfile.value ?: return
         repo()?.saveProgress(p.id, Progress(m, positionMs, durationMs, System.currentTimeMillis()))
+    }
+
+    /** Lo que se pidió quitar de "Continuar viendo" y espera confirmación (diálogo global). */
+    val confirmHide = MutableStateFlow<Progress?>(null)
+
+    fun askHide(p: Progress) {
+        confirmHide.value = p
+    }
+
+    fun cancelHide() {
+        confirmHide.value = null
+    }
+
+    fun hideFromContinue(p: Progress) {
+        confirmHide.value = null
+        val prof = activeProfile.value ?: return
+        repo()?.hideProgress(prof.id, p.media)
     }
 
     fun toggleFavorite(m: Media) {

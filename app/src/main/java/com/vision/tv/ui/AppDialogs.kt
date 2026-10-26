@@ -29,6 +29,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vision.tv.AppViewModel
 import com.vision.tv.BuildConfig
 import com.vision.tv.UpdateUi
+import com.vision.tv.data.MediaKind
+import com.vision.tv.data.Progress
 import com.vision.tv.data.Updater
 
 /** Avisos que pueden salir sobre cualquier pantalla (menos el reproductor). */
@@ -36,9 +38,12 @@ import com.vision.tv.data.Updater
 fun AppDialogs(vm: AppViewModel) {
     val crash by vm.lastCrash.collectAsStateWithLifecycle()
     val update by vm.update.collectAsStateWithLifecycle()
+    val hide by vm.confirmHide.collectAsStateWithLifecycle()
     val c = crash
+    val h = hide
     when {
         c != null -> CrashDialog(c) { vm.dismissCrash() }
+        h != null -> HideDialog(h, onConfirm = { vm.hideFromContinue(h) }, onDismiss = { vm.cancelHide() })
         update != UpdateUi.Hidden -> UpdateDialog(vm, update)
     }
 }
@@ -88,6 +93,31 @@ private fun CrashDialog(text: String, onDismiss: () -> Unit) {
         }
         Spacer(Modifier.height(24.px))
         TvButton("Entendido", Modifier.focusRequester(ok), primary = true, onClick = onDismiss)
+    }
+}
+
+@Composable
+private fun HideDialog(p: Progress, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    val t = V.type
+    val isEpisode = p.media.kind == MediaKind.EPISODE
+    val title = if (isEpisode) p.media.seriesName else p.media.name
+    // El foco empieza en "Cancelar": un OK de más no debe quitar nada.
+    val cancel = remember { FocusRequester() }
+    LaunchedEffect(Unit) { cancel.requestWhenReady() }
+    VisionDialog(onDismiss, width = 760) {
+        Text("¿Quitar de Continuar viendo?", style = t.headlineMd, color = Color.White)
+        Spacer(Modifier.height(8.px))
+        Text(
+            "«$title» dejará de aparecer en Continuar viendo. " +
+                (if (isEpisode) "Los episodios vistos y tu avance se conservan" else "Tu avance se conserva") +
+                ", y si vuelves a reproducirla aparecerá de nuevo.",
+            style = t.bodyLg, color = Dim,
+        )
+        Spacer(Modifier.height(28.px))
+        Row(horizontalArrangement = Arrangement.spacedBy(16.px)) {
+            TvButton("Quitar", primary = true, onClick = onConfirm)
+            TvButton("Cancelar", Modifier.focusRequester(cancel), onClick = onDismiss)
+        }
     }
 }
 

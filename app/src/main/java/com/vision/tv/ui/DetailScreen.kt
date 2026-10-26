@@ -47,10 +47,14 @@ fun DetailScreen(vm: AppViewModel, media: Media) {
     val favs by vm.favorites.collectAsStateWithLifecycle()
     val watch by vm.watchlist.collectAsStateWithLifecycle()
     val progress by vm.progressMap.collectAsStateWithLifecycle()
+    val cont by vm.continueItems.collectAsStateWithLifecycle()
 
     val isSeries = media.kind == MediaKind.SERIES
     val isFav = favs.any { it.key == media.key }
     val inList = watch.any { it.key == media.key }
+    val inContinue = cont.firstOrNull {
+        if (isSeries) it.media.kind == MediaKind.EPISODE && it.media.seriesId == media.itemId else it.media.key == media.key
+    }
 
     // Todos los episodios en orden (temporada 1, 2, …) para reproducir de corrido.
     val allEps = remember(d) { d.seasons.flatMap { d.episodes[it].orEmpty() } }
@@ -165,6 +169,7 @@ fun DetailScreen(vm: AppViewModel, media: Media) {
                     }
                     TvButton(if (inList) "Quitar de mi lista" else "Mi lista", selected = inList) { vm.toggleWatchlist(media) }
                     TvButton(if (isFav) "Quitar favorito" else "Favorito", selected = isFav) { vm.toggleFavorite(media) }
+                    if (inContinue != null) TvButton("Quitar de Continuar viendo") { vm.askHide(inContinue) }
                     TvButton("Volver") { vm.pop() }
                 }
             }
